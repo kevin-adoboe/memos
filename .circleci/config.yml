@@ -1,0 +1,122 @@
+version: 2.1
+
+# Starter pipeline mirroring .github/workflows/{backend-tests,frontend-tests,proto-linter}.yml.
+# Tests run through CircleCI Smarter Testing; suites live in .circleci/test-suites.yml.
+
+jobs:
+  backend:
+    docker:
+      # Go version from go.mod (1.27.x). The image ships gotestsum and golangci-lint v2.14.0.
+      - image: cimg/go:1.27
+    environment:
+      # Run store tests against SQLite only and skip TestContainers-based tests
+      # (MySQL/PostgreSQL drivers and upgrade tests need a Docker daemon).
+      DRIVER: sqlite
+      SKIP_CONTAINER_TESTS: "1"
+    steps:
+      - checkout
+      - restore_cache:
+          keys:
+            - go-mod-v1-{{ checksum "go.sum" }}
+      - run:
+          name: Install dependencies
+          command: go mod download
+      - save_cache:
+          key: go-mod-v1-{{ checksum "go.sum" }}
+          paths:
+            - /home/circleci/go/pkg/mod
+            - /home/circleci/.cache/go-build
+      - run:
+          name: Build
+          command: go build ./...
+      - run:
+          name: Test (store)
+          command: circleci testsuite run "go store tests"
+      - run:
+          name: Test (other packages)
+          command: circleci testsuite run "go tests"
+      - store_test_results:
+          path: test-reports
+      - run:
+          name: Verify go.mod is tidy
+          command: |
+            go mod tidy
+            git diff --exit-code
+      - run:
+          name: Verify go fix
+          command: go fix -diff ./...
+      - run:
+          name: Lint
+          command: golangci-lint run --timeout=3m
+
+  frontend:
+    docker:
+      # Node 24, as used by .github/actions/setup-web.
+      - image: cimg/node:24.22
+    steps:
+      - checkout
+      - restore_cache:
+          keys:
+            - pnpm-v1-{{ checksum "web/pnpm-lock.yaml" }}
+      - run:
+          name: Install dependencies
+          working_directory: web
+          command: pnpm install --frozen-lockfile --store-dir /home/circleci/.pnpm-store
+      - save_cache:
+          key: pnpm-v1-{{ checksum "web/pnpm-lock.yaml" }}
+          paths:
+            - /home/circleci/.pnpm-store
+      - run:
+          name: Build
+          working_directory: web
+          command: pnpm build
+      - run:
+          name: Test
+          command: circleci testsuite run "web tests"
+      - store_test_results:
+          path: test-reports
+      - run:
+          name: Lint
+          working_directory: web
+          command: pnpm lint
+
+  proto:
+    docker:
+      - image: cimg/go:1.27
+    environment:
+      BUF_VERSION: 1.75.0
+    steps:
+      - checkout
+      - restore_cache:
+          keys:
+            - buf-v1-{{ checksum "proto/buf.lock" }}
+      - run:
+          name: Install buf
+          command: |
+            mkdir -p /home/circleci/bin
+            curl -sSL "https://github.com/bufbuild/buf/releases/download/v${BUF_VERSION}/buf-$(uname -s)-$(uname -m)" -o /home/circleci/bin/buf
+            chmod +x /home/circleci/bin/buf
+            echo 'export PATH=/home/circleci/bin:$PATH' >> "$BASH_ENV"
+      - run:
+          name: Install dependencies
+          working_directory: proto
+          command: buf build -o /dev/null
+      - save_cache:
+          key: buf-v1-{{ checksum "proto/buf.lock" }}
+          paths:
+            - /home/circleci/.cache/buf
+      - run:
+          name: Lint
+          working_directory: proto
+          command: buf lint
+      - run:
+          name: Check format
+          working_directory: proto
+          command: buf format -d --exit-code
+
+workflows:
+  ci:
+    jobs:
+      - backend
+      - frontend
+      - proto

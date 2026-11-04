@@ -1,0 +1,22 @@
+# CircleCI Smarter Testing suites. Run with: circleci testsuite run "<name>"
+# Commands run from the repository root.
+---
+# Store tests run without -race, matching the GitHub Actions "store" group.
+name: go store tests
+discover: go list -f '{{if or .TestGoFiles .XTestGoFiles}}{{.ImportPath}}{{end}}' ./store/... | grep -v '^$'
+run: gotestsum --junitfile="<< outputs.junit >>" -- -count=1 << test.atoms >>
+outputs:
+  junit: test-reports/go-store.xml
+---
+# All other Go packages run with -race, matching the server/internal/other groups.
+name: go tests
+discover: go list -f '{{if or .TestGoFiles .XTestGoFiles}}{{.ImportPath}}{{end}}' ./... | grep -v '^$' | grep -v '^github.com/usememos/memos/store\(/\|$\)'
+run: gotestsum --junitfile="<< outputs.junit >>" -- -race -count=1 << test.atoms >>
+outputs:
+  junit: test-reports/go.xml
+---
+name: web tests
+discover: cd web && pnpm exec vitest list --filesOnly
+run: cd web && pnpm exec vitest run --reporter=junit --outputFile="../<< outputs.junit >>" --bail 0 << test.atoms >>
+outputs:
+  junit: test-reports/web.xml
