@@ -1,0 +1,12 @@
+---
+name: backend tests
+discover: go list -f '{{ if or (len .TestGoFiles) (len .XTestGoFiles) }}{{ .ImportPath }}{{ end }}' ./... | sed '/^$/d'
+run: gotestsum --junitfile="<< outputs.junit >>" -- -race -count=1 << test.atoms >>
+outputs:
+  junit: test-results/backend/junit.xml
+---
+name: frontend tests
+discover: cd web && pnpm exec vitest list --filesOnly
+run: cd web && pnpm exec vitest run --reporter=default --reporter=junit --outputFile.junit="$OLDPWD/<< outputs.junit >>" << test.atoms >>
+outputs:
+  junit: test-results/frontend/junit.xml

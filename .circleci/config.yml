@@ -1,0 +1,84 @@
+version: 2.1
+
+# Starter pipeline mirroring the GitHub Actions workflows in .github/workflows/
+# (backend-tests.yml and frontend-tests.yml). Tests run through CircleCI
+# Smarter Testing; suites are defined in .circleci/test-suites.yml.
+
+jobs:
+  backend:
+    docker:
+      - image: cimg/go:1.27
+    environment:
+      # Store tests use SQLite. MySQL/PostgreSQL store tests need TestContainers
+      # (a Docker daemon) and are skipped automatically without one.
+      DRIVER: sqlite
+    steps:
+      - checkout
+      - restore_cache:
+          keys:
+            - go-mod-v1-{{ checksum "go.sum" }}
+      - run:
+          name: Install dependencies
+          command: go mod download
+      - save_cache:
+          key: go-mod-v1-{{ checksum "go.sum" }}
+          paths:
+            - ~/go/pkg/mod
+      - run:
+          name: Build
+          command: go build ./...
+      - run:
+          name: Test
+          command: circleci testsuite run "backend tests"
+      - store_test_results:
+          path: test-results/backend
+      - run:
+          name: Verify go.mod is tidy
+          command: |
+            go mod tidy
+            git diff --exit-code
+      - run:
+          name: Verify go fix
+          command: go fix -diff ./...
+      - run:
+          name: Lint
+          command: golangci-lint run --timeout=3m
+
+  frontend:
+    docker:
+      - image: cimg/node:24.22
+    working_directory: ~/project/web
+    steps:
+      - checkout:
+          path: ~/project
+      - restore_cache:
+          keys:
+            - pnpm-v1-{{ checksum "pnpm-lock.yaml" }}
+      - run:
+          name: Install dependencies
+          command: |
+            # pnpm switches to the version pinned in package.json (packageManager).
+            pnpm --version
+            pnpm install --frozen-lockfile --store-dir ~/.pnpm-store
+      - save_cache:
+          key: pnpm-v1-{{ checksum "pnpm-lock.yaml" }}
+          paths:
+            - ~/.pnpm-store
+      - run:
+          name: Build
+          command: pnpm build
+      - run:
+          name: Test
+          working_directory: ~/project
+          command: circleci testsuite run "frontend tests"
+      - store_test_results:
+          path: ~/project/test-results/frontend
+      - run:
+          name: Lint
+          command: pnpm lint
+
+workflows:
+  ci:
+    jobs:
+      - backend
+      - frontend
