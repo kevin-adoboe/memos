@@ -1,0 +1,82 @@
+# Starter CircleCI pipeline. Mirrors .github/workflows/backend-tests.yml and frontend-tests.yml.
+# Tests run through CircleCI Smarter Testing; suites are defined in .circleci/test-suites.yml.
+version: 2.1
+
+jobs:
+  backend:
+    docker:
+      - image: cimg/go:1.27
+    environment:
+      # Store tests use SQLite only. MySQL/PostgreSQL store tests need Docker (testcontainers).
+      DRIVER: sqlite
+    steps:
+      - checkout
+      - restore_cache:
+          keys:
+            - go-mod-v1-{{ checksum "go.sum" }}
+      - run:
+          name: Install dependencies
+          command: go mod download
+      - save_cache:
+          key: go-mod-v1-{{ checksum "go.sum" }}
+          paths:
+            - ~/go/pkg/mod
+      - run:
+          name: Build
+          command: go build -o /tmp/memos ./cmd/memos
+      - run:
+          name: Test (store)
+          command: circleci testsuite run "backend-store"
+      - run:
+          name: Test (server, internal, cmd, core, markdown, filter, provider, proto)
+          command: circleci testsuite run "backend"
+      - run:
+          name: Verify go.mod is tidy
+          command: |
+            go mod tidy
+            git diff --exit-code
+      - run:
+          name: Verify go fix
+          command: go fix -diff ./...
+      - run:
+          name: Lint (golangci-lint)
+          command: go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0 run --timeout=5m
+
+  frontend:
+    docker:
+      - image: cimg/node:24.22
+    environment:
+      COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+    steps:
+      - checkout
+      - run:
+          name: Enable pnpm (version pinned by web/package.json packageManager)
+          command: sudo corepack enable pnpm
+      - restore_cache:
+          keys:
+            - pnpm-store-v1-{{ checksum "web/pnpm-lock.yaml" }}
+      - run:
+          name: Install dependencies
+          working_directory: web
+          command: pnpm install --frozen-lockfile --store-dir ~/.pnpm-store
+      - save_cache:
+          key: pnpm-store-v1-{{ checksum "web/pnpm-lock.yaml" }}
+          paths:
+            - ~/.pnpm-store
+      - run:
+          name: Build
+          working_directory: web
+          command: pnpm build
+      - run:
+          name: Test
+          command: circleci testsuite run "frontend"
+      - run:
+          name: Lint
+          working_directory: web
+          command: pnpm lint
+
+workflows:
+  ci:
+    jobs:
+      - backend
+      - frontend

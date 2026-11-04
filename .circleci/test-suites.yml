@@ -1,0 +1,26 @@
+# CircleCI Smarter Testing suites. Run with: circleci testsuite run "<suite name>"
+# Groups mirror .github/workflows/backend-tests.yml and frontend-tests.yml.
+name: backend-store
+# Store tests run without -race, as in the GitHub "store" test group. DRIVER is set by the job.
+discover: go list -f '{{if or (len .TestGoFiles) (len .XTestGoFiles)}}{{.ImportPath}}{{end}}' ./store/...
+run: go run gotest.tools/gotestsum@v1.13.0 --junitfile="<< outputs.junit >>" -- -count=1 << test.atoms >>
+options:
+  # Uploads JUnit results for the Tests tab and Insights. No other options: impact analysis,
+  # dynamic splitting, parallelism and auto-rerun stay off.
+  store-test-results: true
+---
+name: backend
+discover: go list -f '{{if or (len .TestGoFiles) (len .XTestGoFiles)}}{{.ImportPath}}{{end}}' ./server/... ./internal/... ./cmd/... ./core/... ./markdown/... ./filter/... ./provider/... ./proto/...
+run: go run gotest.tools/gotestsum@v1.13.0 --junitfile="<< outputs.junit >>" -- -race -count=1 << test.atoms >>
+options:
+  # Uploads JUnit results for the Tests tab and Insights. No other options: impact analysis,
+  # dynamic splitting, parallelism and auto-rerun stay off.
+  store-test-results: true
+---
+name: frontend
+discover: cd web && pnpm exec vitest list --filesOnly
+run: cd web && pnpm exec vitest run --reporter=junit --outputFile="<< outputs.junit >>" << test.atoms >>
+options:
+  # Uploads JUnit results for the Tests tab and Insights. No other options: impact analysis,
+  # dynamic splitting, parallelism and auto-rerun stay off.
+  store-test-results: true
