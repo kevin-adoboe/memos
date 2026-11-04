@@ -1,0 +1,21 @@
+# Go store tests (SQLite only, see DRIVER in .circleci/config.yml). Run without
+# -race, matching the GitHub Actions "store" group.
+name: backend-store
+discover: go list -f '{{if or .TestGoFiles .XTestGoFiles}}{{.ImportPath}}{{end}}' ./store/...
+run: go run gotest.tools/gotestsum@v1.13.0 --junitfile="<< outputs.junit >>" -- -count=1 << test.atoms >>
+options:
+  store-test-results: true
+---
+# All other Go packages, with the race detector.
+name: backend
+discover: go list -f '{{if or .TestGoFiles .XTestGoFiles}}{{.ImportPath}}{{end}}' ./... | grep -v '^github.com/usememos/memos/store\(/\|$\)'
+run: go run gotest.tools/gotestsum@v1.13.0 --junitfile="<< outputs.junit >>" -- -race -count=1 << test.atoms >>
+options:
+  store-test-results: true
+---
+# Frontend Vitest unit tests.
+name: web
+discover: cd web && ./node_modules/.bin/vitest list --filesOnly
+run: cd web && ./node_modules/.bin/vitest run --reporter=junit --outputFile="<< outputs.junit >>" --silent --bail 0 << test.atoms >>
+options:
+  store-test-results: true

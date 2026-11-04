@@ -1,0 +1,80 @@
+version: 2.1
+
+functions:
+  go: github.com/circleci-functions/setup-go@v0.7.0
+  node: github.com/circleci-functions/setup-node@v0.4.0
+
+jobs:
+  backend:
+    docker:
+      - image: cimg/base:stable
+    environment:
+      # Store tests run against SQLite only; the MySQL/PostgreSQL variants need
+      # TestContainers (a Docker daemon), which this starter job does not provide.
+      DRIVER: sqlite
+      SKIP_CONTAINER_TESTS: "1"
+    steps:
+      - checkout
+      - go:
+          with:
+            version-file: go.mod
+            checksum: '{{ checksum "go.sum" }}'
+            golangci-lint-cache: true
+      - run:
+          name: Download modules
+          command: go mod download
+      - run:
+          name: Build
+          command: go build ./...
+      - run:
+          name: Test (store)
+          command: circleci testsuite run "backend-store"
+      - run:
+          name: Test (race)
+          command: circleci testsuite run "backend"
+      - run:
+          name: Verify go.mod is tidy
+          command: |
+            go mod tidy
+            git diff --exit-code
+      - run:
+          name: Verify go fix
+          command: go fix -diff ./...
+      - run:
+          name: Install golangci-lint
+          command: |
+            curl -sSfL https://golangci-lint.run/install.sh | sh -s -- -b "$(go env GOPATH)/bin" v2.14.0
+      - run:
+          name: Lint
+          command: |
+            export PATH="$(go env GOPATH)/bin:$PATH"
+            golangci-lint run --timeout=3m
+
+  web:
+    docker:
+      - image: cimg/base:stable
+    steps:
+      - checkout
+      - node:
+          with:
+            node-version: "24"
+      - node/install-packages:
+          with:
+            app-dir: web
+      - run:
+          name: Build
+          working_directory: web
+          command: pnpm build
+      - run:
+          name: Test
+          command: circleci testsuite run "web"
+      - run:
+          name: Lint
+          working_directory: web
+          command: pnpm lint
+
+workflows:
+  ci:
+    jobs:
+      - backend
+      - web
