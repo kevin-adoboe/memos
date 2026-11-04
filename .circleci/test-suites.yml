@@ -1,0 +1,20 @@
+# CircleCI Smarter Testing suites. See https://circleci.com/docs/guides/test/smarter-testing-overview/
+---
+# Store tests run without -race (testcontainers' reaper has known races), matching GitHub Actions.
+name: backend store
+discover: go list -f '{{ if or (len .TestGoFiles) (len .XTestGoFiles) }} {{ .ImportPath }} {{end}}' ./store/...
+run: go run gotest.tools/gotestsum@v1.13.0 --junitfile="<< outputs.junit >>" -- -count=1 << test.atoms >>
+options:
+  store-test-results: true
+---
+name: backend
+discover: go list -f '{{ if or (len .TestGoFiles) (len .XTestGoFiles) }} {{ .ImportPath }} {{end}}' ./server/... ./internal/... ./cmd/... ./core/... ./markdown/... ./filter/... ./provider/... ./proto/... ./scripts/...
+run: go run gotest.tools/gotestsum@v1.13.0 --junitfile="<< outputs.junit >>" -- -race -count=1 << test.atoms >>
+options:
+  store-test-results: true
+---
+name: frontend
+discover: pnpm exec vitest list --filesOnly
+run: pnpm exec vitest run --reporter=junit --outputFile="<< outputs.junit >>" --bail 0 << test.atoms >>
+options:
+  store-test-results: true
