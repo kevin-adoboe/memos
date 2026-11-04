@@ -1,0 +1,66 @@
+version: 2.1
+
+functions:
+  setup-go: github.com/circleci-functions/setup-go@v0.7.0
+  setup-node: github.com/circleci-functions/setup-node@v0.4.0
+
+jobs:
+  backend:
+    docker:
+      - image: cimg/base:stable
+    steps:
+      - checkout
+      - setup-go:
+          with:
+            version-file: go.mod
+            checksum: '{{ checksum "go.sum" }}'
+            golangci-lint-cache: true
+      - run:
+          name: Build
+          command: go build ./...
+      - run:
+          name: Test
+          command: circleci testsuite run "backend"
+      - run:
+          name: Verify go.mod is tidy
+          command: |
+            go mod tidy
+            git diff --exit-code
+      - run:
+          name: Verify go fix
+          command: go fix -diff ./...
+      - run:
+          name: Install golangci-lint
+          command: curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/HEAD/install.sh | sh -s -- -b "$(go env GOPATH)/bin" v2.14.0
+      - run:
+          name: Lint
+          command: '"$(go env GOPATH)/bin/golangci-lint" run --timeout=3m'
+
+  frontend:
+    docker:
+      - image: cimg/base:stable
+    steps:
+      - checkout
+      - setup-node:
+          with:
+            node-version: "24"
+      - setup-node/install-packages:
+          with:
+            app-dir: web
+      - run:
+          name: Lint
+          working_directory: web
+          command: pnpm lint
+      - run:
+          name: Test
+          command: circleci testsuite run "frontend"
+      - run:
+          name: Build
+          working_directory: web
+          command: pnpm build
+
+workflows:
+  ci:
+    jobs:
+      - backend
+      - frontend

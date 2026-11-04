@@ -1,0 +1,16 @@
+# CircleCI Smarter Testing suites. See
+# https://circleci.com/docs/guides/test/smarter-testing-overview/
+---
+name: backend
+# Go packages that contain test files. Store tests run against SQLite here;
+# MySQL/PostgreSQL drivers use TestContainers and need Docker.
+discover: go list -f '{{ if or (len .TestGoFiles) (len .XTestGoFiles) }} {{ .ImportPath }} {{end}}' ./...
+run: DRIVER=sqlite go run gotest.tools/gotestsum@v1.13.0 --junitfile="<< outputs.junit >>" -- -race -count=1 << test.atoms >>
+options:
+  store-test-results: true
+---
+name: frontend
+discover: cd web && pnpm exec vitest list --filesOnly
+run: cd web && pnpm exec vitest run --reporter=junit --outputFile="<< outputs.junit >>" --bail 0 << test.atoms >>
+options:
+  store-test-results: true
